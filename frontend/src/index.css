@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THEMES
+   Each theme is a set of "R G B" triplets consumed by tailwind.config.js via
+   rgb(var(--x) / <alpha-value>). The app uses the `slate` scale directionally
+   (low shades = backgrounds, high shades = text), so a theme can even invert it
+   for a dark mode. Switch themes by setting <html data-theme="…"> (see
+   src/store/theme.ts). `:root` is the default (Indigo).
+   ──────────────────────────────────────────────────────────────────────── */
+:root,
+:root[data-theme='indigo'] {
+  color-scheme: light;
+  --c-surface: 255 255 255;
+  --c-slate-50: 248 250 252;
+  --c-slate-100: 241 245 249;
+  --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105;
+  --c-slate-700: 51 65 85;
+  --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42;
+  --c-brand-50: 238 242 255;
+  --c-brand-100: 224 231 255;
+  --c-brand-500: 99 102 241;
+  --c-brand-600: 79 70 229;
+  --c-brand-700: 67 56 202;
+}
+
+/* Claude — warm clay accent on a cream, paper-like surface. */
+:root[data-theme='claude'] {
+  color-scheme: light;
+  --c-surface: 252 251 247;
+  --c-slate-50: 244 242 234;
+  --c-slate-100: 235 232 223;
+  --c-slate-200: 222 218 206;
+  --c-slate-300: 207 201 186;
+  --c-slate-400: 163 158 143;
+  --c-slate-500: 130 125 110;
+  --c-slate-600: 99 94 81;
+  --c-slate-700: 74 70 59;
+  --c-slate-800: 51 48 42;
+  --c-slate-900: 31 29 24;
+  --c-brand-50: 250 237 231;
+  --c-brand-100: 244 217 204;
+  --c-brand-500: 214 137 107;
+  --c-brand-600: 201 100 66;
+  --c-brand-700: 168 79 49;
+}
+
+/* Emerald — cool neutrals, green accent. */
+:root[data-theme='emerald'] {
+  color-scheme: light;
+  --c-surface: 255 255 255;
+  --c-slate-50: 248 250 252;
+  --c-slate-100: 241 245 249;
+  --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105;
+  --c-slate-700: 51 65 85;
+  --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42;
+  --c-brand-50: 236 253 245;
+  --c-brand-100: 209 250 229;
+  --c-brand-500: 16 185 129;
+  --c-brand-600: 5 150 105;
+  --c-brand-700: 4 120 87;
+}
+
+/* Ocean — slightly cool neutrals, cyan accent. */
+:root[data-theme='ocean'] {
+  color-scheme: light;
+  --c-surface: 255 255 255;
+  --c-slate-50: 248 250 252;
+  --c-slate-100: 241 245 249;
+  --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105;
+  --c-slate-700: 51 65 85;
+  --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42;
+  --c-brand-50: 236 254 255;
+  --c-brand-100: 207 250 254;
+  --c-brand-500: 6 182 212;
+  --c-brand-600: 8 145 178;
+  --c-brand-700: 14 116 144;
+}
+
+/* Rose — warm neutrals, crimson accent. */
+:root[data-theme='rose'] {
+  color-scheme: light;
+  --c-surface: 255 255 255;
+  --c-slate-50: 250 250 249;
+  --c-slate-100: 245 245 244;
+  --c-slate-200: 231 229 228;
+  --c-slate-300: 214 211 209;
+  --c-slate-400: 168 162 158;
+  --c-slate-500: 120 113 108;
+  --c-slate-600: 87 83 78;
+  --c-slate-700: 68 64 60;
+  --c-slate-800: 41 37 36;
+  --c-slate-900: 28 25 23;
+  --c-brand-50: 255 241 242;
+  --c-brand-100: 255 228 230;
+  --c-brand-500: 244 63 94;
+  --c-brand-600: 225 29 72;
+  --c-brand-700: 190 18 60;
+}
+
+/* Midnight — true dark mode. The neutral scale is inverted (low = dark bg,
+   high = light text); brand stays a bright indigo and lightens on hover. */
+:root[data-theme='midnight'] {
+  color-scheme: dark;
+  --c-surface: 19 27 46;
+  --c-slate-50: 11 17 32;
+  --c-slate-100: 30 41 59;
+  --c-slate-200: 51 65 85;
+  --c-slate-300: 71 85 105;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 203 213 225;
+  --c-slate-600: 226 232 240;
+  --c-slate-700: 232 238 245;
+  --c-slate-800: 241 245 249;
+  --c-slate-900: 248 250 252;
+  --c-brand-50: 49 46 129;
+  --c-brand-100: 55 48 163;
+  --c-brand-500: 129 140 248;
+  --c-brand-600: 99 102 241;
+  --c-brand-700: 165 180 252;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100;
+  }
+  .btn-outline {
+    @apply btn border border-slate-300 bg-surface text-slate-700 hover:bg-slate-50;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-surface shadow-sm;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-surface px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-slate-500;
+  }
+  .th {
+    @apply px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .td {
+    @apply px-4 py-3 text-sm text-slate-700;
+  }
+}
