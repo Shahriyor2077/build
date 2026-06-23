@@ -271,12 +271,20 @@ model Lead {
   budgetMaxPaise  BigInt?
   preferredLocation String?
 
+  // Project interest & structured geo. Captured up-front (before conversion) so
+  // the lead-routing engine can assign the right salesperson by project / city.
+  projectId       String?
+  city            String?
+
   // Source attribution — a lead must trace back to a campaign source.
   campaignId      String?
   campaign        Campaign?       @relation(fields: [campaignId], references: [id])
   sourceId        String?
   source          CampaignSource? @relation(fields: [sourceId], references: [id])
   sourceChannel   SourceChannel   @default(OTHER)
+
+  // External correlation (e.g. Salesforce Lead Id) for partner-portal sync.
+  sfLeadId        String?
 
   ownerId         String
   owner           User       @relation("LeadOwner", fields: [ownerId], references: [id])
@@ -303,6 +311,8 @@ model Lead {
   @@index([mobile])
   @@index([email])
   @@index([campaignId])
+  @@index([projectId])
+  @@index([sfLeadId])
 }
 
 enum ActivityType {
@@ -1048,4 +1058,43 @@ model CustomFieldValue {
 
   @@unique([fieldId, recordId])
   @@index([recordId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LEAD ROUTING (assign incoming leads to the right salesperson / team)
+// ═══════════════════════════════════════════════════════════════════════════
+// Ordered, first-match-wins rules. Each rule's conditions (project / campaign /
+// source channel / geography) are ANDed; an unset condition is a wildcard. The
+// matching rule routes the lead either to one named salesperson (SPECIFIC_USER)
+// or to a team pool, picking the least-loaded member (ROUND_ROBIN). Evaluated by
+// lib/leadRouting.ts on both the authenticated and partner-intake create paths.
+
+enum RoutingStrategy {
+  SPECIFIC_USER // route to a single named salesperson (targetUserId)
+  ROUND_ROBIN   // route to the least-loaded active member of the pool (memberIds)
+}
+
+model LeadRoutingRule {
+  id            String          @id @default(uuid())
+  name          String
+  description   String?
+  priority      Int             @default(0) // lower = evaluated first
+  active        Boolean         @default(true)
+
+  // Conditions — every set condition must match (AND); an unset one is a wildcard.
+  projectId     String?
+  campaignId    String?
+  sourceChannel SourceChannel?
+  locations     String[]        @default([]) // case-insensitive substring match on the lead's city / preferred location
+
+  // Target
+  strategy      RoutingStrategy @default(ROUND_ROBIN)
+  targetUserId  String? // SPECIFIC_USER: the salesperson who receives the lead
+  memberIds     String[]        @default([]) // ROUND_ROBIN: the team pool to balance across
+
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([active, priority])
 }

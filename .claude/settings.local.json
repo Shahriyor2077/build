@@ -22,5 +22,8 @@
       "Bash(echo \"install exit=$?\")",
       "Bash(tail -4 /d/npm-tmp/testdeps.txt)"
     ]
+  },
+  "skillOverrides": {
+    "frontend-design": "name-only"
   }
 }

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ActivityType, AuditAction, LeadStage, RoleName, SourceChannel } from '@prisma/client';
+import { ActivityType, AuditAction, LeadStage, SourceChannel } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { asyncHandler } from '../middleware/async';
 import { authorize } from '../middleware/rbac';
@@ -9,6 +9,7 @@ import { writeAudit } from '../middleware/audit';
 import { listQuerySchema, paginate, orderBy, pageMeta } from '../lib/http';
 import { badRequest, conflict, notFound } from '../lib/errors';
 import { scopeFilter, hasGlobalView } from '../middleware/scope';
+import { resolveLeadRouting } from '../lib/leadRouting';
 
 const router = Router();
 
@@ -46,28 +47,13 @@ const leadBody = z.object({
   budgetMinRupees: z.number().nonnegative().optional(),
   budgetMaxRupees: z.number().nonnegative().optional(),
   preferredLocation: z.string().optional(),
+  city: z.string().optional(),
+  projectId: z.string().uuid().optional(),
   campaignId: z.string().uuid().optional(),
   sourceId: z.string().uuid().optional(),
   sourceChannel: z.enum(CHANNELS),
   ownerId: z.string().uuid().optional(),
 });
-
-/**
- * Round-robin auto-assignment: pick the active SALES_AGENT with the fewest
- * owned leads. Returns null if there are no sales agents.
- */
-async function roundRobinAgent(): Promise<string | null> {
-  const agents = await prisma.user.findMany({
-    where: { isActive: true, role: { name: RoleName.SALES_AGENT } },
-    select: { id: true, _count: { select: { ownedLeads: true } } },
-  });
-  if (agents.length === 0) return null;
-  let best = agents[0];
-  for (const a of agents) {
-    if (a._count.ownedLeads < best._count.ownedLeads) best = a;
-  }
-  return best.id;
-}
 
 // GET /api/leads
 router.get(
@@ -110,11 +96,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const b = req.body as z.infer<typeof leadBody>;
 
+    // Owner resolution: an explicit ownerId always wins. Otherwise, admins (who
+    // create on behalf of the team) run the lead through the routing engine;
+    // a sales agent creating their own lead keeps it.
     let ownerId = b.ownerId ?? req.user!.id;
-    // Admins creating without an explicit owner get round-robin assignment.
+    let routing: Awaited<ReturnType<typeof resolveLeadRouting>> = null;
     if (!b.ownerId && hasGlobalView(req.user!)) {
-      const agent = await roundRobinAgent();
-      if (agent) ownerId = agent;
+      routing = await resolveLeadRouting(
+        { projectId: b.projectId, campaignId: b.campaignId, sourceChannel: b.sourceChannel as SourceChannel, location: b.city ?? b.preferredLocation },
+        { fallbackOwnerId: req.user!.id },
+      );
+      if (routing) ownerId = routing.ownerId;
     }
 
     const lead = await prisma.lead.create({
@@ -127,12 +119,29 @@ router.post(
         budgetMinPaise: b.budgetMinRupees != null ? BigInt(Math.round(b.budgetMinRupees * 100)) : undefined,
         budgetMaxPaise: b.budgetMaxRupees != null ? BigInt(Math.round(b.budgetMaxRupees * 100)) : undefined,
         preferredLocation: b.preferredLocation,
+        city: b.city,
+        projectId: b.projectId,
         campaignId: b.campaignId,
         sourceId: b.sourceId,
         sourceChannel: b.sourceChannel as SourceChannel,
         ownerId,
       },
     });
+
+    // Record an auto-routing decision on the timeline (manual owner = no note).
+    if (routing && routing.outcome !== 'FALLBACK') {
+      const target = await prisma.user.findUnique({ where: { id: ownerId }, select: { name: true } });
+      await prisma.leadActivity.create({
+        data: {
+          leadId: lead.id,
+          type: ActivityType.NOTE,
+          summary: `Auto-routed to ${target?.name ?? 'agent'}${routing.ruleName ? ` · rule "${routing.ruleName}"` : ' · default round-robin'}`,
+          meta: { routing: { ownerId, outcome: routing.outcome, ruleId: routing.ruleId, ruleName: routing.ruleName, strategy: routing.strategy } } as never,
+          createdById: req.user!.id,
+        },
+      });
+    }
+
     await writeAudit({ userId: req.user!.id, action: AuditAction.CREATE, module: 'leads', entity: 'Lead', entityId: lead.id, newValue: lead });
     res.status(201).json(lead);
   }),
@@ -395,45 +404,75 @@ router.get(
 );
 
 // POST /api/leads/:id/convert
+//
+// Salesforce-style conversion: the lead always becomes an Account (create a new
+// one from the person's name, or link an existing one). Creating an Opportunity
+// is OPTIONAL — only when a projectId is supplied (an Opportunity always belongs
+// to a project). So a lead can be converted to just an Account, no project.
+const convertBody = z.object({
+  // Account — choose an existing one, or create a new person account.
+  accountId: z.string().uuid().optional(), // when set: link this existing account
+  salutation: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  // Opportunity (optional) — only created when a project is chosen.
+  projectId: z.string().uuid().optional(),
+  opportunityName: z.string().optional(),
+  name: z.string().optional(), // legacy alias for opportunityName
+});
+
 router.post(
   '/:id/convert',
   authorize('leads.convert'),
-  validate({ body: z.object({ projectId: z.string().uuid(), name: z.string().optional() }) }),
+  validate({ body: convertBody }),
   asyncHandler(async (req, res) => {
-    const { projectId, name } = req.body as { projectId: string; name?: string };
+    const b = req.body as z.infer<typeof convertBody>;
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw notFound('Lead not found');
     if (lead.opportunityId) throw conflict('Lead already has an active opportunity');
     if (lead.stage === LeadStage.CONVERTED) throw conflict('Lead is already converted');
 
-    const result = await prisma.$transaction(async (tx) => {
-      const account = await tx.account.create({
-        data: {
-          name: lead.name,
-          type: 'INDIVIDUAL',
-          ownerId: lead.ownerId,
-          contacts: {
-            create: {
-              name: lead.name,
-              mobile: lead.mobile,
-              email: lead.email,
-              isPrimary: true,
-            },
-          },
-        },
-      });
+    // Compose the new account/contact name from the salutation + first/last name
+    // captured on the convert form, falling back to the lead's own name.
+    const personName =
+      [b.salutation, b.firstName, b.lastName].map((s) => s?.trim()).filter(Boolean).join(' ').trim() || lead.name;
 
-      const opportunity = await tx.opportunity.create({
-        data: {
-          name: name ?? `${lead.name} — ${lead.bhk ?? 'Opportunity'}`,
-          accountId: account.id,
-          projectId,
-          stage: 'PROSPECT',
-          probability: 10,
-          ownerId: lead.ownerId,
-          campaignId: lead.campaignId,
-        },
-      });
+    const result = await prisma.$transaction(async (tx) => {
+      let account;
+      if (b.accountId) {
+        // Choose Existing Account: link it and add the lead's person as a contact.
+        account = await tx.account.findUnique({ where: { id: b.accountId } });
+        if (!account) throw badRequest('Selected account not found');
+        await tx.contact.create({
+          data: { accountId: account.id, name: lead.name, mobile: lead.mobile, email: lead.email, isPrimary: false },
+        });
+      } else {
+        // Create New Account (person account) with a primary contact.
+        account = await tx.account.create({
+          data: {
+            name: personName,
+            type: 'INDIVIDUAL',
+            ownerId: lead.ownerId,
+            contacts: { create: { name: personName, mobile: lead.mobile, email: lead.email, isPrimary: true } },
+          },
+        });
+      }
+
+      // Opportunity is optional — only when a project is selected.
+      let opportunity = null;
+      if (b.projectId) {
+        opportunity = await tx.opportunity.create({
+          data: {
+            name: b.opportunityName ?? b.name ?? `${lead.name} — ${lead.bhk ?? 'Opportunity'}`,
+            accountId: account.id,
+            projectId: b.projectId,
+            stage: 'PROSPECT',
+            probability: 10,
+            ownerId: lead.ownerId,
+            campaignId: lead.campaignId,
+          },
+        });
+      }
 
       const updatedLead = await tx.lead.update({
         where: { id: lead.id },
@@ -441,7 +480,7 @@ router.post(
           stage: LeadStage.CONVERTED,
           convertedAt: new Date(),
           accountId: account.id,
-          opportunityId: opportunity.id,
+          opportunityId: opportunity?.id,
         },
       });
 
@@ -453,7 +492,7 @@ router.post(
         entity: 'Lead',
         entityId: lead.id,
         oldValue: { stage: lead.stage },
-        newValue: { stage: LeadStage.CONVERTED, accountId: account.id, opportunityId: opportunity.id },
+        newValue: { stage: LeadStage.CONVERTED, accountId: account.id, opportunityId: opportunity?.id ?? null },
       });
 
       return { account, opportunity, lead: updatedLead };

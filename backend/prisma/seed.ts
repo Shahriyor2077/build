@@ -247,6 +247,70 @@ async function main() {
     }
   }
 
+  // ── Lead routing rules (demo) ──
+  // Ordered, first-match-wins. Showcases the three routing dimensions:
+  // by project, by geography, and by source channel.
+  const agent2Id = users[3].id; // Sneha Agent
+  const routingRules: {
+    id: string;
+    name: string;
+    description: string;
+    priority: number;
+    projectId?: string;
+    sourceChannel?: 'BROKER';
+    locations?: string[];
+    strategy: 'SPECIFIC_USER' | 'ROUND_ROBIN';
+    targetUserId?: string;
+    memberIds?: string[];
+  }[] = [
+    {
+      id: '00000000-0000-4000-8000-000000000001',
+      name: 'Skyline Heights → Rahul',
+      description: 'Leads interested in Skyline Heights go to the project specialist.',
+      priority: 0,
+      projectId: project.id,
+      strategy: 'SPECIFIC_USER',
+      targetUserId: agentId,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000002',
+      name: 'Whitefield geography → sales pool',
+      description: 'Whitefield/East Bengaluru leads balance across the sales team.',
+      priority: 1,
+      locations: ['Whitefield', 'Bengaluru'],
+      strategy: 'ROUND_ROBIN',
+      memberIds: [agentId, agent2Id],
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000003',
+      name: 'Broker leads → Sneha',
+      description: 'Channel-partner submissions are handled by the broker desk.',
+      priority: 2,
+      sourceChannel: 'BROKER',
+      strategy: 'SPECIFIC_USER',
+      targetUserId: agent2Id,
+    },
+  ];
+  for (const r of routingRules) {
+    await prisma.leadRoutingRule.upsert({
+      where: { id: r.id },
+      create: {
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        priority: r.priority,
+        projectId: r.projectId,
+        sourceChannel: r.sourceChannel,
+        locations: r.locations ?? [],
+        strategy: r.strategy,
+        targetUserId: r.targetUserId,
+        memberIds: r.memberIds ?? [],
+        createdById: adminId,
+      },
+      update: {},
+    });
+  }
+
   console.log('✅ Seed complete.');
   console.log('   Login with admin@realitycrm.com / Passw0rd!  (and other role accounts — see README)');
 }

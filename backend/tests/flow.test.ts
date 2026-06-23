@@ -163,4 +163,35 @@ describe('core lifecycle: lead → convert → booking', () => {
     const count = await prisma.auditLog.count();
     expect(count).toBeGreaterThan(0);
   });
+
+  it('converts a lead to an Account only (no project / opportunity)', async () => {
+    const lead = await agent
+      .post('/api/leads')
+      .set(auth())
+      .send({ name: 'Meera Singh', mobile: '9876500022', sourceChannel: 'OTHER' });
+    expect(lead.status).toBe(201);
+
+    const res = await agent
+      .post(`/api/leads/${lead.body.id}/convert`)
+      .set(auth())
+      .send({ salutation: 'Ms.', firstName: 'Meera', lastName: 'Singh' });
+    expect(res.status).toBe(201);
+    expect(res.body.account.name).toBe('Ms. Meera Singh');
+    expect(res.body.account.type).toBe('INDIVIDUAL');
+    expect(res.body.opportunity).toBeNull();
+    expect(res.body.lead.stage).toBe('CONVERTED');
+    expect(res.body.lead.opportunityId).toBeFalsy();
+  });
+
+  it('converts a lead into an existing Account', async () => {
+    const lead = await agent
+      .post('/api/leads')
+      .set(auth())
+      .send({ name: 'Repeat Buyer', mobile: '9876500033', sourceChannel: 'OTHER' });
+    const res = await agent.post(`/api/leads/${lead.body.id}/convert`).set(auth()).send({ accountId });
+    expect(res.status).toBe(201);
+    expect(res.body.account.id).toBe(accountId);
+    expect(res.body.opportunity).toBeNull();
+    expect(res.body.lead.accountId).toBe(accountId);
+  });
 });

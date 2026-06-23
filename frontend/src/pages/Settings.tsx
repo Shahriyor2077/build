@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, SlidersHorizontal, CreditCard, Mail, ScrollText, Plus, Trash2, KeyRound, Database, Pencil,
-  GripVertical, ArrowUp, ArrowDown,
+  GripVertical, ArrowUp, ArrowDown, Route,
 } from 'lucide-react';
 import { api, apiErrorMessage } from '../api/client';
 import { PageHeader, Card, StatusBadge, Spinner, EmptyState, Field, Modal } from '../components/ui';
@@ -11,10 +11,11 @@ import { useAuth } from '../store/auth';
 import {
   CustomFieldDef, CustomObjectType, OBJECT_LABELS, FIELD_TYPE_META, fieldTypeLabel, useCustomFieldDefs,
 } from '../components/customFields';
+import RoutingTab from './RoutingSettings';
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 
-type TabKey = 'users' | 'config' | 'fields' | 'plans' | 'templates' | 'audit';
+type TabKey = 'users' | 'config' | 'routing' | 'fields' | 'plans' | 'templates' | 'audit';
 
 interface TabDef {
   key: TabKey;
@@ -26,6 +27,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: 'users', label: 'Users & Roles', icon: Users, perm: 'admin.users' },
   { key: 'config', label: 'System Config', icon: SlidersHorizontal, perm: 'admin.config' },
+  { key: 'routing', label: 'Lead Routing', icon: Route, perm: 'leads.routing' },
   { key: 'fields', label: 'Object Manager', icon: Database, perm: 'admin.config' },
   { key: 'plans', label: 'Payment Plans', icon: CreditCard },
   { key: 'templates', label: 'Notification Templates', icon: Mail, perm: 'admin.templates' },
@@ -61,6 +63,7 @@ export default function Settings() {
 
       {active === 'users' && <UsersRolesTab />}
       {active === 'config' && <SystemConfigTab />}
+      {active === 'routing' && <RoutingTab />}
       {active === 'fields' && <ObjectManagerTab />}
       {active === 'plans' && <PaymentPlansTab />}
       {active === 'templates' && <TemplatesTab />}

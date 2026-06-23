@@ -33,6 +33,9 @@ const schema = z.object({
   DEFAULT_HOLD_HOURS: z.coerce.number().default(48),
   GST_RATE_UNDER_CONSTRUCTION: z.coerce.number().default(5),
   COMPANY_NAME: z.string().default('Reality Developers Pvt Ltd'),
+
+  // Shared secret for the server-to-server partner intake API (broker portal).
+  PARTNER_API_KEY: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

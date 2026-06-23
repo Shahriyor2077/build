@@ -33,11 +33,13 @@ interface NewLead {
   budgetMinRupees: string;
   budgetMaxRupees: string;
   preferredLocation: string;
+  city: string;
+  projectId: string;
 }
 
 const emptyLead: NewLead = {
   name: '', mobile: '', email: '', sourceChannel: 'OTHER', interestType: '',
-  bhk: '', budgetMinRupees: '', budgetMaxRupees: '', preferredLocation: '',
+  bhk: '', budgetMinRupees: '', budgetMaxRupees: '', preferredLocation: '', city: '', projectId: '',
 };
 
 function budgetRange(l: any): string {
@@ -154,7 +156,7 @@ function KanbanBoard({ leads, onOpen }: { leads: any[]; onOpen: (id: string) => 
       setLostReason('');
       return;
     }
-    // Conversion creates an Account + Opportunity and needs a project chosen, so
+    // Conversion creates (or links) an Account and optionally an Opportunity, so
     // route it through the proper convert flow instead of a bare stage change.
     if (stage === 'CONVERTED') {
       onOpen(id);
@@ -278,6 +280,12 @@ function AddLeadModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [error, setError] = useState('');
 
+  // Project interest feeds the lead-routing engine (Settings → Lead Routing).
+  const projects = useQuery({
+    queryKey: ['lead-projects'],
+    queryFn: async () => ((await api.get('/inventory/projects', { params: { pageSize: 200 } })).data?.data ?? []) as any[],
+  });
+
   const mut = useMutation({
     mutationFn: async () => {
       const created = (await api.post('/leads', {
@@ -290,6 +298,8 @@ function AddLeadModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         budgetMinRupees: form.budgetMinRupees ? Number(form.budgetMinRupees) : undefined,
         budgetMaxRupees: form.budgetMaxRupees ? Number(form.budgetMaxRupees) : undefined,
         preferredLocation: form.preferredLocation || undefined,
+        city: form.city || undefined,
+        projectId: form.projectId || undefined,
       })).data;
       await saveCustomFieldValues('LEAD', created.id, customValues);
       return created;
@@ -346,8 +356,19 @@ function AddLeadModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
             <input type="number" min="0" className="input" value={form.budgetMaxRupees} onChange={(e) => setForm({ ...form, budgetMaxRupees: e.target.value })} />
           </Field>
         </div>
-        <Field label="Preferred location">
-          <input className="input" value={form.preferredLocation} onChange={(e) => setForm({ ...form, preferredLocation: e.target.value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Preferred location">
+            <input className="input" value={form.preferredLocation} onChange={(e) => setForm({ ...form, preferredLocation: e.target.value })} />
+          </Field>
+          <Field label="City">
+            <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="e.g. Bengaluru" />
+          </Field>
+        </div>
+        <Field label="Project interest">
+          <select className="input" value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>
+            <option value="">No specific project</option>
+            {(projects.data ?? []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </Field>
         <CustomFieldInputs objectType="LEAD" values={customValues} onChange={setCustomValues} />
       </div>
@@ -422,8 +443,17 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [summary, setSummary] = useState('');
   const [error, setError] = useState('');
   const [showConvert, setShowConvert] = useState(false);
-  const [projectId, setProjectId] = useState('');
   const [converted, setConverted] = useState(false);
+
+  // Convert form (Salesforce-style: Account first, Opportunity/Project optional).
+  const [acctMode, setAcctMode] = useState<'new' | 'existing'>('new');
+  const [salutation, setSalutation] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [acctQuery, setAcctQuery] = useState('');
+  const [selectedAccount, setSelectedAccount] = useState<{ id: string; name: string } | null>(null);
+  const [createOpp, setCreateOpp] = useState(false);
+  const [projectId, setProjectId] = useState('');
 
   const detail = useQuery({
     queryKey: ['lead', id],
@@ -448,15 +478,45 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
 
   const projects = useQuery({
     queryKey: ['inventory-projects'],
-    enabled: showConvert,
+    enabled: showConvert && createOpp,
     queryFn: async () => {
       const res = (await api.get('/inventory/projects')).data;
       return (Array.isArray(res) ? res : res?.data ?? []) as any[];
     },
   });
 
+  // Existing-account search (Choose Existing Account).
+  const accountSearch = useQuery({
+    queryKey: ['convert-account-search', acctQuery],
+    enabled: showConvert && acctMode === 'existing' && acctQuery.trim().length >= 2,
+    queryFn: async () =>
+      ((await api.get('/accounts', { params: { q: acctQuery.trim(), pageSize: 8 } })).data?.data ?? []) as any[],
+  });
+
+  function openConvert() {
+    // Prefill the person's name from the lead (e.g. "Kiran Rao" → Kiran / Rao).
+    const parts = String(detail.data?.name ?? '').trim().split(/\s+/).filter(Boolean);
+    setFirstName(parts.length > 1 ? parts.slice(0, -1).join(' ') : '');
+    setLastName(parts.length > 0 ? parts[parts.length - 1] : '');
+    setSalutation('');
+    setAcctMode('new');
+    setSelectedAccount(null);
+    setAcctQuery('');
+    setCreateOpp(false);
+    setProjectId('');
+    setError('');
+    setShowConvert(true);
+  }
+
   const convertMut = useMutation({
-    mutationFn: async () => (await api.post(`/leads/${id}/convert`, { projectId })).data,
+    mutationFn: async () => {
+      const payload: Record<string, unknown> =
+        acctMode === 'existing'
+          ? { accountId: selectedAccount?.id }
+          : { salutation: salutation || undefined, firstName: firstName || undefined, lastName };
+      if (createOpp && projectId) payload.projectId = projectId;
+      return (await api.post(`/leads/${id}/convert`, payload)).data;
+    },
     onSuccess: () => {
       setConverted(true);
       setShowConvert(false);
@@ -465,6 +525,9 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     },
     onError: (e) => setError(apiErrorMessage(e)),
   });
+
+  const convertValid =
+    (acctMode === 'existing' ? !!selectedAccount : lastName.trim().length > 0) && (!createOpp || !!projectId);
 
   const l = detail.data;
   const events = timeline.data ?? [];
@@ -513,7 +576,7 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             </div>
 
-            <button className="btn-primary w-full justify-center" onClick={() => { setError(''); setShowConvert(true); }}>
+            <button className="btn-primary w-full justify-center" onClick={openConvert}>
               Convert lead
             </button>
 
@@ -561,7 +624,7 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         )}
       </div>
 
-      {/* Convert modal */}
+      {/* Convert modal — Account-centric (Project optional) */}
       <Modal
         open={showConvert}
         onClose={() => setShowConvert(false)}
@@ -569,24 +632,100 @@ function LeadDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         footer={
           <>
             <button className="btn-ghost" onClick={() => setShowConvert(false)}>Cancel</button>
-            <button className="btn-primary" disabled={!projectId || convertMut.isPending} onClick={() => convertMut.mutate()}>
+            <button className="btn-primary" disabled={!convertValid || convertMut.isPending} onClick={() => convertMut.mutate()}>
               {convertMut.isPending ? 'Converting…' : 'Convert'}
             </button>
           </>
         }
       >
-        <Field label="Project">
-          {projects.isLoading ? (
-            <Spinner />
-          ) : (
-            <select className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              <option value="">Select a project…</option>
-              {(projects.data ?? []).map((p: any) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          )}
-        </Field>
+        <div className="space-y-4">
+          {/* Account section */}
+          <div>
+            <div className="mb-2 flex items-center gap-4 text-sm font-medium">
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <input type="radio" className="accent-brand-600" checked={acctMode === 'new'} onChange={() => setAcctMode('new')} />
+                Create New Account
+              </label>
+              <span className="text-slate-400">— OR —</span>
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <input type="radio" className="accent-brand-600" checked={acctMode === 'existing'} onChange={() => setAcctMode('existing')} />
+                Choose Existing Account
+              </label>
+            </div>
+
+            {acctMode === 'new' ? (
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <Field label="Salutation">
+                  <select className="input" value={salutation} onChange={(e) => setSalutation(e.target.value)}>
+                    <option value="">--None--</option>
+                    {['Mr.', 'Ms.', 'Mrs.', 'Dr.', 'Prof.'].map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </Field>
+                <Field label="First Name">
+                  <input className="input" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                </Field>
+                <Field label="Last Name *">
+                  <input className="input" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                </Field>
+                <div className="text-xs text-slate-400">A new person account and primary contact will be created.</div>
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                <Field label="Account Search">
+                  <input className="input" value={acctQuery} onChange={(e) => { setAcctQuery(e.target.value); setSelectedAccount(null); }} placeholder="Search by name or PAN…" />
+                </Field>
+                {acctQuery.trim().length >= 2 && (
+                  accountSearch.isLoading ? (
+                    <Spinner />
+                  ) : (accountSearch.data ?? []).length === 0 ? (
+                    <p className="text-sm text-slate-400">No matching accounts.</p>
+                  ) : (
+                    <ul className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                      {(accountSearch.data ?? []).map((a: any) => (
+                        <li key={a.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAccount({ id: a.id, name: a.name })}
+                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 ${selectedAccount?.id === a.id ? 'bg-brand-50' : ''}`}
+                          >
+                            <span className="text-slate-700">{a.name}</span>
+                            <span className="text-xs text-slate-400">{String(a.type ?? '').replace(/_/g, ' ')}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                )}
+                {selectedAccount && (
+                  <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Selected: {selectedAccount.name}</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Optional opportunity — Project is NOT required to convert */}
+          <div className="rounded-lg border border-slate-200 p-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+              <input type="checkbox" className="accent-brand-600" checked={createOpp} onChange={(e) => setCreateOpp(e.target.checked)} />
+              Also create an opportunity for a project
+            </label>
+            {createOpp && (
+              <div className="mt-3">
+                <Field label="Project">
+                  {projects.isLoading ? (
+                    <Spinner />
+                  ) : (
+                    <select className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                      <option value="">Select a project…</option>
+                      {(projects.data ?? []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  )}
+                </Field>
+                <p className="mt-1 text-xs text-slate-400">Leave unchecked to convert to an account only.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -14,7 +14,7 @@ const M = (module: string, actions: string[]): PermissionDef[] =>
 
 export const PERMISSIONS: PermissionDef[] = [
   ...M('campaigns', ['read', 'create', 'update', 'archive', 'analytics']),
-  ...M('leads', ['read', 'create', 'update', 'convert', 'import', 'assign', 'delete']),
+  ...M('leads', ['read', 'create', 'update', 'convert', 'import', 'assign', 'delete', 'routing']),
   ...M('accounts', ['read', 'create', 'update', 'kyc', 'documents', 'empanel']),
   ...M('opportunities', ['read', 'create', 'update', 'stage', 'forecast']),
   ...M('siteVisits', ['read', 'create', 'update', 'feedback', 'analytics']),

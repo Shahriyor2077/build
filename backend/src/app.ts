@@ -27,6 +27,8 @@ import reportRoutes from './modules/reports.routes';
 import dashboardRoutes from './modules/dashboard.routes';
 import adminRoutes from './modules/admin.routes';
 import customFieldRoutes from './modules/customFields.routes';
+import routingRoutes from './modules/routing.routes';
+import partnerRoutes from './modules/partner.routes';
 import notificationRoutes from './modules/notifications.routes';
 import searchRoutes from './modules/search.routes';
 
@@ -50,6 +52,10 @@ export function createApp() {
   // Public auth routes (rate-limited).
   app.use('/api/auth', authLimiter, authRoutes);
 
+  // Server-to-server partner intake (broker portal). Gated by API key inside
+  // the router, so it sits outside the JWT-authenticated router below.
+  app.use('/api/partner', partnerRoutes);
+
   // Everything below requires a valid access token.
   const api = express.Router();
   api.use(authenticate);
@@ -66,6 +72,7 @@ export function createApp() {
   api.use('/dashboard', dashboardRoutes);
   api.use('/admin', adminRoutes);
   api.use('/custom-fields', customFieldRoutes);
+  api.use('/routing', routingRoutes);
   api.use('/notifications', notificationRoutes);
   api.use('/search', searchRoutes);
   // Finance/demand/receipt + payment-plan routes use full paths (/bookings/.., /demands/.., /receipts/.., /payment-plans).
