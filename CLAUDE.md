@@ -20,7 +20,7 @@ React/Vite SPA (`frontend/`), backed by PostgreSQL + Redis.
 - For local dev against a persistent DB (instead of the ephemeral test instance), use
   `npm run dev:db` in `backend/` — a self-healing embedded-Postgres launcher
   (`backend/scripts/dev-db.mjs`) matching `backend/.env` (user `crm` / pw `crm_secret` / db
-  `reality_crm` / port 5432). Run `npx prisma db push` + `npm run seed` once after first boot.
+  `reality_crm` / port 5432). Run `npx prisma migrate deploy` + `npm run seed` once after first boot.
 - Embedded Postgres on this machine intermittently hits a Windows shared-memory reservation bug
   (antivirus loading a DLL over PG's shared-mem base address) — symptoms are `P1001 Can't reach
   database server` and very few `postgres.exe` processes running (healthy is ~6-10). The
@@ -30,7 +30,7 @@ React/Vite SPA (`frontend/`), backed by PostgreSQL + Redis.
 - Embedded Postgres must be initialized with UTF8/C locale (already configured in
   `dev-db.mjs` and `tests/globalSetup.ts`) — otherwise inserts containing non-ASCII text
   (₹, →, emoji) fail with Postgres error `22P05`. This is fixed at `initdb` time, so changing it
-  requires wiping the data dir and re-running `prisma db push` + `npm run seed`.
+  requires wiping the data dir and re-running `prisma migrate deploy` + `npm run seed`.
 
 ## Commands
 

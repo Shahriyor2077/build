@@ -36,8 +36,9 @@ export async function setup() {
     await pg.createDatabase(DB);
   }
 
-  // Apply the schema to the (now empty) database.
-  execSync('npx prisma db push --skip-generate --accept-data-loss', {
+  // Drop everything and replay the versioned migrations, so the suite also
+  // proves the migration history (not just the schema) builds a working DB.
+  execSync('npx prisma migrate reset --force --skip-seed --skip-generate', {
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
   });

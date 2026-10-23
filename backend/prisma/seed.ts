@@ -87,6 +87,28 @@ async function main() {
   const adminId = users[0].id;
   const agentId = users[2].id;
 
+  // ── Tenant: demo data is INR-priced, so the demo company keeps INR/en/IST ──
+  // (same id as the add_company_tenancy migration backfill).
+  const company = await prisma.company.upsert({
+    where: { id: '00000000-0000-0000-0000-00000000c001' },
+    create: {
+      id: '00000000-0000-0000-0000-00000000c001',
+      name: 'Demo Company',
+      slug: 'demo',
+      currency: 'INR',
+      locale: 'en',
+      timezone: 'Asia/Kolkata',
+    },
+    update: {},
+  });
+  for (const u of users) {
+    await prisma.companyMembership.upsert({
+      where: { companyId_userId: { companyId: company.id, userId: u.id } },
+      create: { companyId: company.id, userId: u.id, role: u.role },
+      update: { role: u.role },
+    });
+  }
+
   // ── Channel partner account, then link the broker user to it ──
   const cpAccount = await prisma.account.upsert({
     where: { id: '00000000-0000-0000-0000-0000000000cp' },
